@@ -1,0 +1,66 @@
+resofire-picks:
+
+  ##
+  # Admin interface translations
+  ##
+
+  admin:
+
+    nav:
+      picks: Picks
+
+    permissions:
+      manage: Manage Picks
+      make_picks: Make Picks
+      view: View Picks
+
+  ##
+  # Shared library translations
+  ##
+
+  lib:
+
+    nav:
+      picks: Picks
+      matches: Matches
+      my_picks: My Picks
+      leaderboard: Leaderboard
+      teams: Teams
+      seasons: Seasons
+      weeks: Weeks
+      games: Games
+      settings: Settings
+      sync: Sync & Settings
+      scores: Leaderboard & Scores
+      dashboard: Dashboard
+      picks_settings: Picks Settings
+
+    common:
+      home: Home
+      away: Away
+      vs: vs
+      season: Season
+      week: Week
+      team: Team
+      date: Date
+      status: Status
+      score: Score
+      result: Result
+      points: pts
+      match: Match
+
+    status:
+      scheduled: Scheduled
+      closed: Closed
+      finished: Finished
+      correct: Correct
+      incorrect: Incorrect
+      pending: Pending
+
+    messages:
+      no_data: No data found.
+      no_matches: No games found.
+      saved: Saved successfully.
+      deleted: Deleted successfully.
+      delete_confirm: Are you sure?
+      login_required: Please log in to participate.
