@@ -1,0 +1,262 @@
+// ============================================================
+// Picks Admin — Slice 2
+// ============================================================
+
+// Tab navigation
+.PicksAdminPage-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
+  padding: 0 0 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--control-bg);
+
+  .PicksAdminPage-tab {
+    white-space: nowrap;
+    i { margin-right: 6px; }
+  }
+}
+
+.PicksAdminPage-content {
+  min-height: 300px;
+}
+
+// Generic tab layout
+.PicksTab-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+
+  h3 {
+    margin: 0 0 4px;
+    i { margin-right: 8px; }
+  }
+}
+
+.PicksTab-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.PicksTab-meta {
+  color: var(--muted-color);
+  font-size: 13px;
+  margin: 0;
+}
+
+// Filters row
+.PicksTab-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+
+  .FormControl {
+    flex: 1;
+    min-width: 140px;
+    max-width: 240px;
+  }
+}
+
+// Card list table
+.PicksCardList {
+  border: 1px solid var(--control-bg);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.PicksCardList-header {
+  display: grid;
+  grid-template-columns: 56px 1fr 140px 80px 140px 100px;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--control-bg);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-color);
+}
+
+.PicksCardList-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 140px 80px 140px 100px;
+  gap: 12px;
+  padding: 10px 12px;
+  align-items: center;
+  border-top: 1px solid var(--control-bg);
+
+  &:hover {
+    background: var(--control-bg);
+  }
+}
+
+.PicksCardList-cell--primary {
+  font-weight: 600;
+}
+
+.PicksCardList-cell--muted {
+  color: var(--muted-color);
+}
+
+.PicksCardList-cell--actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+// Team logo in list
+.PicksTeamLogo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.PicksTeamLogo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--control-bg);
+  border-radius: 4px;
+  font-weight: 700;
+  color: var(--muted-color);
+}
+
+// Team edit modal logo preview
+.TeamEditModal-logoPreview {
+  margin: 8px 0;
+  padding: 8px;
+  background: var(--control-bg);
+  border-radius: 6px;
+  display: inline-block;
+
+  img {
+    max-width: 100px;
+    max-height: 100px;
+    object-fit: contain;
+    display: block;
+  }
+
+  &--dark {
+    background: #1a1a2e;
+  }
+}
+
+// Alert banner
+.PicksAlert {
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+
+  &--info {
+    background: var(--control-bg);
+    border-left: 4px solid var(--primary-color);
+  }
+  &--error {
+    background: #fff0f0;
+    border-left: 4px solid #e74c3c;
+  }
+}
+
+// Empty state
+.PicksEmptyState {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted-color);
+}
+
+// Placeholder for unbuilt tabs
+.PicksPlaceholder {
+  padding: 60px;
+  text-align: center;
+  color: var(--muted-color);
+  font-style: italic;
+}
+
+// Seasons tab grid
+.PicksCardList-header--seasons,
+.PicksCardList-row--seasons {
+  grid-template-columns: 60px 100px 1fr 1fr 80px;
+}
+
+// Season type badges
+.PicksBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+
+  &--regular {
+    background: rgba(var(--primary-color-rgb, 52, 152, 219), 0.15);
+    color: var(--primary-color);
+  }
+
+  &--postseason {
+    background: rgba(243, 156, 18, 0.15);
+    color: #f39c12;
+  }
+}
+
+// Inline edit input
+.FormControl--small {
+  height: 28px;
+  padding: 2px 8px;
+  font-size: 13px;
+}
+
+// Games tab grid
+.PicksCardList-header--games,
+.PicksCardList-row--games {
+  grid-template-columns: 1fr 1fr 120px 100px 80px 50px;
+}
+
+// Team cell with logo + name inline
+.PicksTeamCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+// Small logo variant for game rows
+.PicksTeamLogo--small {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+}
+
+// Status badges
+.PicksBadge--scheduled {
+  background: rgba(52, 152, 219, 0.15);
+  color: #3498db;
+}
+
+.PicksBadge--closed {
+  background: rgba(243, 156, 18, 0.15);
+  color: #f39c12;
+}
+
+.PicksBadge--finished {
+  background: rgba(39, 174, 96, 0.15);
+  color: #27ae60;
+}
+
+// Load more button row
+.PicksLoadMore {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
+}
+
+// Result modal preview
+.PicksResultPreview {
+  padding: 8px 12px;
+  background: var(--control-bg);
+  border-radius: 6px;
+  margin: 0;
+}
