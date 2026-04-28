@@ -1,0 +1,502 @@
+import app from 'flarum/forum/app';
+import Page from 'flarum/common/components/Page';
+import PageStructure from 'flarum/forum/components/PageStructure';
+import IndexSidebar from 'flarum/forum/components/IndexSidebar';
+import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
+import Button from 'flarum/common/components/Button';
+import type Mithril from 'mithril';
+
+interface GameTeam {
+  id: number;
+  name: string;
+  abbreviation: string | null;
+  conference: string | null;
+  logo_url: string | null;
+  logo_dark_url: string | null;
+}
+
+interface MyPick {
+  id: number;
+  selected_outcome: 'home' | 'away';
+  is_correct: boolean | null;
+}
+
+interface Game {
+  id: number;
+  status: string;
+  can_pick: boolean;
+  match_date: string | null;
+  cutoff_date: string | null;
+  neutral_site: boolean;
+  home_score: number | null;
+  away_score: number | null;
+  result: string | null;
+  home_team: GameTeam | null;
+  away_team: GameTeam | null;
+  my_pick: MyPick | null;
+}
+
+interface WeekInfo {
+  id: number;
+  name: string;
+  week_number: number | null;
+  season_type: string;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+interface LeaderboardEntry {
+  rank: number;
+  user_id: number;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  total_points: number;
+  total_picks: number;
+  correct_picks: number;
+  accuracy: number;
+  is_me: boolean;
+}
+
+export default class PicksPage extends Page {
+  private activeTab: string = 'matches';
+  private weeks: WeekInfo[] = [];
+  private currentWeekId: number | null = null;
+  private games: Game[] = [];
+  private gamesLoading: boolean = false;
+  private submitting: Record<number, boolean> = {};
+  private leaderboard: LeaderboardEntry[] = [];
+  private lbLoading: boolean = false;
+  private lbScope: string = 'week';
+  private seasonId: number | null = null;
+  private weeksMeta: { total_picks?: number; picked?: number } = {};
+
+  oninit(vnode: Mithril.Vnode) {
+    super.oninit(vnode);
+
+    const weekIdParam = parseInt(m.route.param('weekId'));
+
+    // Load weeks first, then load games for the current/selected week
+    app.store.find<any[]>('picks-weeks').then((weeks: any[]) => {
+      this.weeks = weeks
+        .map((w: any) => ({
+          id: parseInt(String(w.id())),
+          name: w.name(),
+          week_number: w.weekNumber(),
+          season_type: w.seasonType(),
+          start_date: w.startDate(),
+          end_date: w.endDate(),
+        }))
+        .sort((a, b) => {
+          if (a.season_type !== b.season_type) return a.season_type === 'regular' ? -1 : 1;
+          return (a.week_number || 0) - (b.week_number || 0);
+        });
+
+      // Also grab season_id from the first week's season relationship
+      const firstWeek = app.store.all<any>('picks-weeks')[0];
+      if (firstWeek) {
+        this.seasonId = firstWeek.seasonId?.() ?? null;
+      }
+
+      if (weekIdParam && this.weeks.find(w => w.id === weekIdParam)) {
+        this.currentWeekId = weekIdParam;
+      } else if (this.weeks.length > 0) {
+        this.currentWeekId = this.weeks[0].id;
+      }
+
+      if (this.currentWeekId) {
+        this.loadGames();
+      }
+
+      m.redraw();
+    });
+  }
+
+  private loadGames() {
+    if (!this.currentWeekId) return;
+
+    this.gamesLoading = true;
+    m.redraw();
+
+    app.request<{ data: Game[]; meta: any }>({
+      method: 'GET',
+      url: app.forum.attribute('apiUrl') + '/picks/my-picks',
+      params: { week_id: this.currentWeekId },
+    }).then((r) => {
+      this.games = r.data || [];
+      this.weeksMeta = r.meta || {};
+      this.gamesLoading = false;
+      m.redraw();
+    }).catch(() => {
+      this.gamesLoading = false;
+      m.redraw();
+    });
+  }
+
+  private loadLeaderboard() {
+    this.lbLoading = true;
+    m.redraw();
+
+    const params: Record<string, any> = { scope: this.lbScope, limit: 25 };
+    if (this.lbScope === 'week' && this.currentWeekId) params.week_id = this.currentWeekId;
+    if (this.lbScope === 'season' && this.seasonId) params.season_id = this.seasonId;
+
+    app.request<{ data: LeaderboardEntry[]; meta: any }>({
+      method: 'GET',
+      url: app.forum.attribute('apiUrl') + '/picks/leaderboard',
+      params,
+    }).then((r) => {
+      this.leaderboard = r.data || [];
+      this.lbLoading = false;
+      m.redraw();
+    }).catch(() => {
+      this.lbLoading = false;
+      m.redraw();
+    });
+  }
+
+  private submitPick(game: Game, outcome: 'home' | 'away') {
+    if (!app.session.user) {
+      m.route.set(app.route('login'));
+      return;
+    }
+    if (!game.can_pick) return;
+    if (this.submitting[game.id]) return;
+
+    // Optimistic update
+    const prev = game.my_pick ? game.my_pick.selected_outcome : null;
+    if (!game.my_pick) {
+      game.my_pick = { id: 0, selected_outcome: outcome, is_correct: null };
+    } else {
+      game.my_pick.selected_outcome = outcome;
+    }
+    this.submitting[game.id] = true;
+    m.redraw();
+
+    app.request<{ status: string; pick_id: number; selected_outcome: string }>({
+      method: 'POST',
+      url: app.forum.attribute('apiUrl') + '/picks/submit',
+      body: { event_id: game.id, selected_outcome: outcome },
+    }).then((r) => {
+      if (game.my_pick) game.my_pick.id = r.pick_id;
+      this.submitting[game.id] = false;
+      m.redraw();
+    }).catch(() => {
+      // Revert on failure
+      if (game.my_pick) game.my_pick.selected_outcome = prev as 'home' | 'away';
+      this.submitting[game.id] = false;
+      m.redraw();
+    });
+  }
+
+  private currentWeek(): WeekInfo | undefined {
+    return this.weeks.find(w => w.id === this.currentWeekId);
+  }
+
+  private prevWeek() {
+    const idx = this.weeks.findIndex(w => w.id === this.currentWeekId);
+    if (idx > 0) {
+      this.currentWeekId = this.weeks[idx - 1].id;
+      this.loadGames();
+    }
+  }
+
+  private nextWeek() {
+    const idx = this.weeks.findIndex(w => w.id === this.currentWeekId);
+    if (idx < this.weeks.length - 1) {
+      this.currentWeekId = this.weeks[idx + 1].id;
+      this.loadGames();
+    }
+  }
+
+  private formatDate(dateStr: string | null): string {
+    if (!dateStr) return '';
+    try {
+      return new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  private renderTeamButton(game: Game, side: 'home' | 'away'): Mithril.Children {
+    const team = side === 'home' ? game.home_team : game.away_team;
+    const isFinished = game.status === 'finished';
+    const myOutcome = game.my_pick?.selected_outcome;
+    const isSelected = myOutcome === side;
+    const isWinner = isFinished && game.result === side;
+    const isLoser = isFinished && game.result !== null && game.result !== side;
+
+    let cls = 'PicksTeamBtn';
+    if (isSelected) cls += ' PicksTeamBtn--selected';
+    if (isWinner) cls += ' PicksTeamBtn--winner';
+    if (isLoser) cls += ' PicksTeamBtn--loser';
+    if (!game.can_pick && !isFinished) cls += ' PicksTeamBtn--locked';
+
+    const logoUrl = team?.logo_url;
+
+    return (
+      <button
+        className={cls}
+        disabled={(!game.can_pick || this.submitting[game.id]) || undefined}
+        onclick={() => game.can_pick && this.submitPick(game, side)}
+      >
+        <div className="PicksTeamBtn-logo">
+          {logoUrl
+            ? <img src={logoUrl} alt={team?.name || ''} />
+            : <span>{(team?.abbreviation || team?.name || '?').charAt(0)}</span>
+          }
+        </div>
+        <div className="PicksTeamBtn-name">{team?.name || '—'}</div>
+        <div className="PicksTeamBtn-conf">{team?.conference || ''}</div>
+      </button>
+    );
+  }
+
+  private renderGameCard(game: Game): Mithril.Children {
+    const isFinished = game.status === 'finished';
+    const isPending = game.my_pick && game.my_pick.is_correct === null && isFinished;
+    const isCorrect = game.my_pick?.is_correct === true;
+    const isIncorrect = game.my_pick?.is_correct === false;
+
+    let cardCls = 'PicksGameCard';
+    if (isCorrect) cardCls += ' PicksGameCard--correct';
+    else if (isIncorrect) cardCls += ' PicksGameCard--incorrect';
+    else if (game.my_pick) cardCls += ' PicksGameCard--picked';
+
+    return (
+      <div className={cardCls} key={String(game.id)}>
+        <div className="PicksGameCard-meta">
+          <span>{this.formatDate(game.match_date)}</span>
+          {game.neutral_site && <span>· Neutral site</span>}
+          {!game.can_pick && game.status === 'scheduled' && <span>· Locked</span>}
+        </div>
+
+        <div className="PicksGameCard-teams">
+          {this.renderTeamButton(game, 'home')}
+
+          <div className="PicksGameCard-vs">
+            {isFinished && game.home_score !== null
+              ? <span className="PicksGameCard-score">{game.home_score}–{game.away_score}</span>
+              : <span>vs</span>
+            }
+          </div>
+
+          {this.renderTeamButton(game, 'away')}
+        </div>
+
+        {(game.my_pick || (!game.can_pick && game.status === 'scheduled')) && (
+          <div className="PicksGameCard-result">
+            {isCorrect && <span className="PicksTag PicksTag--correct">✓ Correct · +1 pt</span>}
+            {isIncorrect && <span className="PicksTag PicksTag--incorrect">✗ Incorrect</span>}
+            {game.my_pick && !isFinished && <span className="PicksTag PicksTag--pending">Pick saved · awaiting result</span>}
+            {!game.can_pick && game.status === 'scheduled' && !game.my_pick && <span className="PicksTag PicksTag--locked">Cutoff passed · no pick</span>}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  private renderMatchesTab(): Mithril.Children {
+    const week = this.currentWeek();
+    const idx = this.weeks.findIndex(w => w.id === this.currentWeekId);
+    const picked = this.weeksMeta.picked || 0;
+    const total = this.weeksMeta.total || 0;
+
+    return (
+      <div className="PicksTab">
+        <div className="PicksWeekNav">
+          <div>
+            <div className="PicksWeekNav-title">{week?.name || '—'}</div>
+            {week?.start_date && <div className="PicksWeekNav-dates">{week.start_date} – {week.end_date}</div>}
+          </div>
+          <div className="PicksWeekNav-arrows">
+            <Button className="Button Button--icon" icon="fas fa-chevron-left" disabled={idx <= 0} onclick={() => this.prevWeek()} />
+            <Button className="Button Button--icon" icon="fas fa-chevron-right" disabled={idx >= this.weeks.length - 1} onclick={() => this.nextWeek()} />
+          </div>
+        </div>
+
+        {app.session.user && total > 0 && (
+          <div className="PicksStatusBar">
+            <span>{app.translator.trans('resofire-picks.lib.common.picked')}: <strong>{picked} / {total}</strong></span>
+          </div>
+        )}
+
+        {this.gamesLoading
+          ? <LoadingIndicator />
+          : this.games.length === 0
+            ? <div className="PicksEmpty">{app.translator.trans('resofire-picks.lib.messages.no_matches')}</div>
+            : this.games.map(game => this.renderGameCard(game))
+        }
+      </div>
+    );
+  }
+
+  private renderMyPicksTab(): Mithril.Children {
+    const week = this.currentWeek();
+    const idx = this.weeks.findIndex(w => w.id === this.currentWeekId);
+    const myGames = this.games.filter(g => g.my_pick);
+    const correct = myGames.filter(g => g.my_pick?.is_correct === true).length;
+    const incorrect = myGames.filter(g => g.my_pick?.is_correct === false).length;
+
+    return (
+      <div className="PicksTab">
+        <div className="PicksWeekNav">
+          <div>
+            <div className="PicksWeekNav-title">{app.translator.trans('resofire-picks.lib.nav.my_picks')} · {week?.name}</div>
+          </div>
+          <div className="PicksWeekNav-arrows">
+            <Button className="Button Button--icon" icon="fas fa-chevron-left" disabled={idx <= 0} onclick={() => this.prevWeek()} />
+            <Button className="Button Button--icon" icon="fas fa-chevron-right" disabled={idx >= this.weeks.length - 1} onclick={() => this.nextWeek()} />
+          </div>
+        </div>
+
+        {myGames.length > 0 && (
+          <div className="PicksStatusBar">
+            <span>{app.translator.trans('resofire-picks.lib.common.picked')}: <strong>{myGames.length}</strong></span>
+            <span>✓ <strong>{correct}</strong></span>
+            <span>✗ <strong>{incorrect}</strong></span>
+            <span>{app.translator.trans('resofire-picks.lib.common.points')}: <strong>{correct}</strong></span>
+          </div>
+        )}
+
+        {this.gamesLoading
+          ? <LoadingIndicator />
+          : myGames.length === 0
+            ? <div className="PicksEmpty">{app.translator.trans('resofire-picks.lib.messages.no_data')}</div>
+            : myGames.map(game => {
+                const side = game.my_pick!.selected_outcome;
+                const team = side === 'home' ? game.home_team : game.away_team;
+                const oppTeam = side === 'home' ? game.away_team : game.home_team;
+                const isCorrect = game.my_pick!.is_correct === true;
+                const isIncorrect = game.my_pick!.is_correct === false;
+
+                return (
+                  <div className={`PicksMyPickRow ${isCorrect ? 'PicksMyPickRow--correct' : isIncorrect ? 'PicksMyPickRow--incorrect' : ''}`} key={String(game.id)}>
+                    <div className="PicksMyPickRow-logos">
+                      {team?.logo_url && <img src={team.logo_url} alt={team.name} className="PicksMyPickRow-logo" />}
+                      <span className="PicksMyPickRow-sep">vs</span>
+                      {oppTeam?.logo_url && <img src={oppTeam.logo_url} alt={oppTeam.name} className="PicksMyPickRow-logo" />}
+                    </div>
+                    <div className="PicksMyPickRow-info">
+                      <div className="PicksMyPickRow-matchup">{team?.name} vs {oppTeam?.name}</div>
+                      <div className="PicksMyPickRow-pick">
+                        {app.translator.trans('resofire-picks.lib.common.picked')}: <strong>{team?.name}</strong>
+                        {game.status === 'finished' && game.home_score !== null && <span> · {game.home_score}–{game.away_score}</span>}
+                      </div>
+                    </div>
+                    <div className="PicksMyPickRow-status">
+                      {isCorrect && <span className="PicksTag PicksTag--correct">+1 pt</span>}
+                      {isIncorrect && <span className="PicksTag PicksTag--incorrect">+0 pts</span>}
+                      {!isCorrect && !isIncorrect && <span className="PicksTag PicksTag--pending">Pending</span>}
+                    </div>
+                  </div>
+                );
+              })
+        }
+      </div>
+    );
+  }
+
+  private renderLeaderboardTab(): Mithril.Children {
+    const scopes = [
+      { key: 'week', label: app.translator.trans('resofire-picks.lib.common.week') },
+      { key: 'season', label: app.translator.trans('resofire-picks.lib.common.season') },
+      { key: 'alltime', label: 'All Time' },
+    ];
+
+    return (
+      <div className="PicksTab">
+        <div className="PicksLbScopes">
+          {scopes.map(s => (
+            <button
+              key={s.key}
+              className={`PicksLbScope ${this.lbScope === s.key ? 'PicksLbScope--active' : ''}`}
+              onclick={() => { this.lbScope = s.key; this.loadLeaderboard(); }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {this.lbLoading
+          ? <LoadingIndicator />
+          : this.leaderboard.length === 0
+            ? <div className="PicksEmpty">{app.translator.trans('resofire-picks.lib.messages.no_data')}</div>
+            : (
+              <div className="PicksLeaderboard">
+                <div className="PicksLeaderboard-head">
+                  <div>#</div>
+                  <div>{app.translator.trans('resofire-picks.lib.common.team')}</div>
+                  <div className="PicksLeaderboard-right">Pts</div>
+                  <div className="PicksLeaderboard-right">W–L</div>
+                  <div className="PicksLeaderboard-right">Acc</div>
+                </div>
+                {this.leaderboard.map(entry => (
+                  <div className={`PicksLeaderboard-row ${entry.is_me ? 'PicksLeaderboard-row--me' : ''}`} key={String(entry.user_id)}>
+                    <div className={`PicksLeaderboard-rank ${entry.rank === 1 ? 'PicksLeaderboard-rank--gold' : ''}`}>
+                      {entry.rank}
+                    </div>
+                    <div className="PicksLeaderboard-user">
+                      {entry.avatar_url
+                        ? <img src={entry.avatar_url} alt={entry.display_name} className="PicksAvatar" />
+                        : <div className="PicksAvatar PicksAvatar--initials">{(entry.display_name || '?').charAt(0)}</div>
+                      }
+                      <span>{entry.display_name}</span>
+                    </div>
+                    <div className="PicksLeaderboard-right PicksLeaderboard-pts">{entry.total_points}</div>
+                    <div className="PicksLeaderboard-right PicksLeaderboard-wl">{entry.correct_picks}–{entry.total_picks - entry.correct_picks}</div>
+                    <div className="PicksLeaderboard-right PicksLeaderboard-acc">{entry.accuracy.toFixed(0)}%</div>
+                  </div>
+                ))}
+              </div>
+            )
+        }
+      </div>
+    );
+  }
+
+  view() {
+    const canView = app.forum.attribute('picksCanView') || app.session.user?.isAdmin();
+
+    return (
+      <PageStructure className="PicksPage" sidebar={() => <IndexSidebar />}>
+        <div className="PicksPage-inner">
+          <div className="PicksPage-tabs">
+            {[
+              { key: 'matches', label: app.translator.trans('resofire-picks.lib.nav.matches'), icon: 'fas fa-football' },
+              { key: 'mypicks', label: app.translator.trans('resofire-picks.lib.nav.my_picks'), icon: 'fas fa-check-circle' },
+              { key: 'leaderboard', label: app.translator.trans('resofire-picks.lib.nav.leaderboard'), icon: 'fas fa-trophy' },
+            ].map(tab => (
+              <button
+                key={tab.key}
+                className={`PicksPage-tab ${this.activeTab === tab.key ? 'PicksPage-tab--active' : ''}`}
+                onclick={() => {
+                  this.activeTab = tab.key;
+                  if (tab.key === 'leaderboard' && this.leaderboard.length === 0) {
+                    this.loadLeaderboard();
+                  }
+                  m.redraw();
+                }}
+              >
+                <i className={tab.icon} />
+                {' '}{tab.label}
+              </button>
+            ))}
+          </div>
+
+          {!canView ? (
+            <div className="PicksEmpty">{app.translator.trans('resofire-picks.lib.messages.login_required')}</div>
+          ) : this.weeks.length === 0 ? (
+            <LoadingIndicator />
+          ) : (
+            <>
+              {this.activeTab === 'matches' && this.renderMatchesTab()}
+              {this.activeTab === 'mypicks' && this.renderMyPicksTab()}
+              {this.activeTab === 'leaderboard' && this.renderLeaderboardTab()}
+            </>
+          )}
+        </div>
+      </PageStructure>
+    );
+  }
+}
